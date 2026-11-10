@@ -23,7 +23,7 @@ namespace mtr {
 
 namespace {
 
-// ANSI 色彩定义
+// ANSI 色彩与控制码
 constexpr const char* COLOR_RESET   = "\033[0m";
 constexpr const char* COLOR_BOLD    = "\033[1m";
 constexpr const char* COLOR_DIM     = "\033[2m";
@@ -36,9 +36,74 @@ constexpr const char* COLOR_CYAN    = "\033[36m";
 constexpr const char* COLOR_WHITE   = "\033[37m";
 
 constexpr const char* BG_SELECT     = "\033[48;5;236m";
+constexpr const char* TUI_EL        = "\033[K\n"; // 清除行末残影并换行
 
 // UTF-8 字符 Sparkline
 const char* SPARK_CHARS[] = {" ", " ", "▂", "▃", "▄", "▅", "▆", "▇", "█"};
+
+// 计算单个 UTF-8 字符占用的终端列宽（ASCII 为 1 列，中文字符/全角为 2 列）
+int getUtf8CharWidth(const char* s, int& byte_len) {
+    unsigned char c = (unsigned char)*s;
+    if (c < 0x80) {
+        byte_len = 1;
+        return 1;
+    } else if ((c & 0xE0) == 0xC0) {
+        byte_len = 2;
+        return 1;
+    } else if ((c & 0xF0) == 0xE0) {
+        byte_len = 3;
+        return 2; // CJK 汉字区在终端占 2 列宽
+    } else if ((c & 0xF8) == 0xF0) {
+        byte_len = 4;
+        return 2;
+    }
+    byte_len = 1;
+    return 1;
+}
+
+// 严格按终端列宽安全截断，且绝不在多字节 UTF-8 字符中间折断，最后以空格填充至 target_width
+std::string padOrTruncateUtf8(const std::string& str, int target_width) {
+    std::string result;
+    int cur_width = 0;
+    size_t i = 0;
+    while (i < str.length()) {
+        int b_len = 1;
+        int w = getUtf8CharWidth(&str[i], b_len);
+        if (i + b_len > str.length()) break;
+        if (cur_width + w > target_width) {
+            break; // 无法容纳下一个完整汉字，提前截断
+        }
+        result.append(&str[i], b_len);
+        cur_width += w;
+        i += b_len;
+    }
+    while (cur_width < target_width) {
+        result += ' ';
+        cur_width++;
+    }
+    return result;
+}
+
+// 获取终端当前物理可见行列数，防止行数超限导致反复滚屏
+void getTerminalSize(int& rows, int& cols) {
+    rows = 24;
+    cols = 100;
+#ifndef _WIN32
+    struct winsize ws;
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0) {
+        if (ws.ws_row > 0) rows = ws.ws_row;
+        if (ws.ws_col > 0) cols = ws.ws_col;
+    }
+#else
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi)) {
+        int h = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+        int w = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+        if (h > 0) rows = h;
+        if (w > 0) cols = w;
+    }
+#endif
+}
 
 #ifndef _WIN32
 int kbhit() {
@@ -119,12 +184,17 @@ void TuiApp::render(const std::vector<HopStats>& hops, const QualityReport& repo
 
     auto cfg = prober_.getConfig();
 
+    int term_rows = 24;
+    int term_cols = 100;
+    getTerminalSize(term_rows, term_cols);
+
     // 1. 顶部标题栏
+    std::string run_state = prober_.isPaused() ? "[PAUSED]" : "[RUNNING]";
     ss << COLOR_BOLD << COLOR_CYAN
-       << "===================================================================================================\n"
-       << "  MTR-TOOLS 去程线路质量测试与智能诊断系统 [TUI 模式]               Target: "
-       << cfg.target_input << " (" << cfg.resolved_ip << ")\n"
-       << "===================================================================================================\n"
+       << "===================================================================================================" << TUI_EL
+       << "  MTR-TOOLS 去程线路质量测试与智能诊断系统 [TUI 模式]    " << run_state << "    Target: "
+       << cfg.target_input << " (" << cfg.resolved_ip << ")" << TUI_EL
+       << "===================================================================================================" << TUI_EL
        << COLOR_RESET;
 
     // 2. 核心健康度评估仪表盘
@@ -138,11 +208,13 @@ void TuiApp::render(const std::vector<HopStats>& hops, const QualityReport& repo
        << std::fixed << std::setprecision(1) << report.effective_loss << "%" << COLOR_RESET
        << " | 终点延迟: " << COLOR_BOLD << report.final_avg_rtt << "ms" << COLOR_RESET
        << " | 抖动: " << report.final_jitter << "ms"
-       << " | MOS: " << COLOR_CYAN << report.mos << " / 4.5" << COLOR_RESET << "\n";
+       << " | MOS: " << COLOR_CYAN << report.mos << " / 4.5" << COLOR_RESET << TUI_EL;
 
     ss << " 场景适用: 网页/流媒体 [" << report.web_rating
        << "]  远程办公/SSH [" << report.ssh_rating
-       << "]  竞技游戏/实时语音 [" << report.game_rating << "]\n";
+       << "]  竞技游戏/实时语音 [" << report.game_rating << "]" << TUI_EL;
+
+    int fixed_lines = 10;
 
     // 路径运营商概览
     if (!report.path_summary.empty()) {
@@ -150,7 +222,8 @@ void TuiApp::render(const std::vector<HopStats>& hops, const QualityReport& repo
         for (const auto& tag : report.path_summary) {
             ss << " -> " << COLOR_YELLOW << tag << COLOR_DIM;
         }
-        ss << COLOR_RESET << "\n";
+        ss << COLOR_RESET << TUI_EL;
+        fixed_lines++;
     }
 
     // 诊断提示
@@ -160,16 +233,17 @@ void TuiApp::render(const std::vector<HopStats>& hops, const QualityReport& repo
             if (i > 0) ss << " | ";
             ss << report.diagnostic_notes[i];
         }
-        ss << "\n";
+        ss << TUI_EL;
+        fixed_lines++;
     }
 
     ss << COLOR_CYAN
-       << "---------------------------------------------------------------------------------------------------\n"
-       << " TTL | IP 地址          | 地理位置 & 运营商       | ASN / 线路画像     | Loss% | Sent | Last | Avg  | 趋势(10次)\n"
-       << "---------------------------------------------------------------------------------------------------\n"
+       << "---------------------------------------------------------------------------------------------------" << TUI_EL
+       << " TTL | IP 地址          | 地理位置 & 运营商      | ASN / 线路画像     | Loss% | Sent | Last | Avg  | 趋势(10次)" << TUI_EL
+       << "---------------------------------------------------------------------------------------------------" << TUI_EL
        << COLOR_RESET;
 
-    // 3. 逐跳表格渲染
+    // 3. 逐跳表格渲染与终端高度自适应（防止行数超出物理高度触发滚屏）
     double global_max_rtt = 0.0;
     for (const auto& h : hops) {
         if (h.recv > 0 && h.avg_rtt > global_max_rtt) global_max_rtt = h.avg_rtt;
@@ -183,11 +257,23 @@ void TuiApp::render(const std::vector<HopStats>& hops, const QualityReport& repo
         }
     }
 
-    for (size_t i = 0; i < hops.size(); ++i) {
-        const auto& h = hops[i];
-        if (h.ttl > max_visible_hop) break;
+    int footer_lines = status_msg_.empty() ? 2 : 3;
+    int max_table_rows = term_rows - fixed_lines - footer_lines - 1;
+    if (max_table_rows < 3) max_table_rows = 3;
 
-        bool is_selected = ((int)i == selected_hop_);
+    int total_hops = std::min((int)hops.size(), max_visible_hop);
+    int start_hop = 0;
+    if (total_hops > max_table_rows) {
+        if (selected_hop_ >= max_table_rows) {
+            start_hop = selected_hop_ - max_table_rows + 1;
+        }
+    }
+    int end_hop = std::min(total_hops, start_hop + max_table_rows);
+
+    for (int i = start_hop; i < end_hop; ++i) {
+        const auto& h = hops[i];
+
+        bool is_selected = (i == selected_hop_);
         if (is_selected) ss << BG_SELECT;
 
         // 丢包率颜色
@@ -211,12 +297,13 @@ void TuiApp::render(const std::vector<HopStats>& hops, const QualityReport& repo
             if (sec != std::string::npos) disp_ip = disp_ip.substr(0, sec) + ".*.*";
         }
 
-        char line_buf[256];
-        snprintf(line_buf, sizeof(line_buf), " %2d  | %-16s | %-21s | %-18s |",
-                 h.ttl,
-                 disp_ip.substr(0, 16).c_str(),
-                 h.geo.getLocationDisplay().substr(0, 21).c_str(),
-                 h.geo.getAsnDisplay().substr(0, 18).c_str());
+        std::string s_ip = padOrTruncateUtf8(disp_ip, 16);
+        std::string s_loc = padOrTruncateUtf8(h.geo.getLocationDisplay(), 22);
+        std::string s_asn = padOrTruncateUtf8(h.geo.getAsnDisplay(), 18);
+
+        char line_buf[128];
+        snprintf(line_buf, sizeof(line_buf), " %2d  | %s | %s | %s |",
+                 h.ttl, s_ip.c_str(), s_loc.c_str(), s_asn.c_str());
 
         ss << line_buf << " " << loss_color;
         char loss_num[32];
@@ -234,20 +321,23 @@ void TuiApp::render(const std::vector<HopStats>& hops, const QualityReport& repo
         // 字符火花图
         ss << generateSparkline(h.rtt_history, global_max_rtt);
         if (is_selected) ss << COLOR_RESET;
-        ss << "\n";
+        ss << TUI_EL;
     }
 
     // 4. 底部状态与快捷键提示栏
     ss << COLOR_CYAN
-       << "===================================================================================================\n"
+       << "===================================================================================================" << TUI_EL
        << COLOR_RESET;
     ss << " 快捷键: [P] " << (prober_.isPaused() ? "继续探测" : "暂停探测")
        << "  |  [R] 重置统计  |  [M] IP脱敏(" << (mask_privacy_ ? "开" : "关")
-       << ")  |  [E] 导出Markdown报告  |  [Q] 退出\n";
+       << ")  |  [E] 导出Markdown报告  |  [Q] 退出" << TUI_EL;
 
     if (!status_msg_.empty()) {
-        ss << " " << COLOR_GREEN << ">>> " << status_msg_ << COLOR_RESET << "\n";
+        ss << " " << COLOR_GREEN << ">>> " << status_msg_ << COLOR_RESET << TUI_EL;
     }
+
+    // 清除光标下方可能多余的旧终端行，彻底杜绝滚屏
+    ss << "\033[J";
 
     std::cout << ss.str() << std::flush;
 }

@@ -5,6 +5,7 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
+#include <netinet/udp.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <unistd.h>
@@ -33,9 +34,9 @@ uint16_t computeChecksum(void* b, int len) {
     return ~sum;
 }
 
-// 从 Linux IP_RECVERR (MSG_ERRQUEUE) 扩展错误队列中提取中间跳路由器 IP (TTL Expired)
-bool readErrorQueueRouterIP(int sock, std::string& out_ip) {
-    char buf[512];
+// 从 Linux IP_RECVERR (MSG_ERRQUEUE) 扩展错误队列中提取属于本探测包 (expected_seq) 的中间跳路由器 IP (TTL Expired)
+bool readErrorQueueRouterIP(int sock, uint16_t expected_seq, int expected_ttl, bool is_udp, std::string& out_ip) {
+    char buf[1024];
     char cbuf[512];
     struct iovec iov;
     struct msghdr msg;
@@ -55,10 +56,51 @@ bool readErrorQueueRouterIP(int sock, std::string& out_ip) {
     ssize_t res = recvmsg(sock, &msg, MSG_ERRQUEUE | MSG_DONTWAIT);
     if (res < 0) return false;
 
+    // 严格核对内层触发 ICMP 错误的原始数据报文，确保匹配本线程的序列号或端口
+    bool matched = false;
+    if (!is_udp) {
+        if (res >= (ssize_t)sizeof(struct icmphdr)) {
+            struct icmphdr* icmp = (struct icmphdr*)buf;
+            if (ntohs(icmp->un.echo.sequence) == expected_seq) {
+                matched = true;
+            }
+        }
+        if (!matched && res >= (ssize_t)(sizeof(struct iphdr) + sizeof(struct icmphdr))) {
+            struct iphdr* ip = (struct iphdr*)buf;
+            int ip_len = ip->ihl * 4;
+            if (res >= ip_len + (ssize_t)sizeof(struct icmphdr)) {
+                struct icmphdr* inner_icmp = (struct icmphdr*)(buf + ip_len);
+                if (ntohs(inner_icmp->un.echo.sequence) == expected_seq) {
+                    matched = true;
+                }
+            }
+        }
+    } else {
+        uint16_t expected_port = static_cast<uint16_t>(33434 + expected_ttl);
+        if (res >= (ssize_t)sizeof(struct udphdr)) {
+            struct udphdr* udp = (struct udphdr*)buf;
+            if (ntohs(udp->dest) == expected_port) {
+                matched = true;
+            }
+        }
+        if (!matched && res >= (ssize_t)(sizeof(struct iphdr) + sizeof(struct udphdr))) {
+            struct iphdr* ip = (struct iphdr*)buf;
+            int ip_len = ip->ihl * 4;
+            if (res >= ip_len + (ssize_t)sizeof(struct udphdr)) {
+                struct udphdr* inner_udp = (struct udphdr*)(buf + ip_len);
+                if (ntohs(inner_udp->dest) == expected_port) {
+                    matched = true;
+                }
+            }
+        }
+    }
+
+    if (!matched) return false;
+
     for (struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); cmsg != nullptr; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
         if (cmsg->cmsg_level == SOL_IP && cmsg->cmsg_type == IP_RECVERR) {
             struct sock_extended_err* ee = (struct sock_extended_err*)CMSG_DATA(cmsg);
-            if (ee && ee->ee_origin == SO_EE_ORIGIN_ICMP) {
+            if (ee && (ee->ee_origin == SO_EE_ORIGIN_ICMP || ee->ee_origin == SO_EE_ORIGIN_LOCAL)) {
                 struct sockaddr_in* offender = (struct sockaddr_in*)SO_EE_OFFENDER(ee);
                 if (offender && offender->sin_family == AF_INET) {
                     char ip_str[INET_ADDRSTRLEN];
@@ -186,7 +228,7 @@ ProbeRecord RouteProber::probeSingleHop(const std::string& target_ip, int ttl, i
 
         // 1. 先检查内核扩展错误队列 (MSG_ERRQUEUE: 捕获中间跳 TTL Expired 或 UDP Port Unreachable)
         std::string err_ip;
-        if (readErrorQueueRouterIP(sock, err_ip)) {
+        if (readErrorQueueRouterIP(sock, probe_seq, ttl, is_udp_trace, err_ip)) {
             record.ip = err_ip;
             record.success = true;
             record.rtt_ms = elapsed_ms;
@@ -201,14 +243,17 @@ ProbeRecord RouteProber::probeSingleHop(const std::string& target_ip, int ttl, i
             socklen_t from_len = sizeof(from);
             ssize_t recvd = recvfrom(sock, recv_buf, sizeof(recv_buf), MSG_DONTWAIT, (struct sockaddr*)&from, &from_len);
             if (recvd > 0) {
-                if (is_dgram_icmp) {
-                    char resp_ip[INET_ADDRSTRLEN];
-                    inet_ntop(AF_INET, &(from.sin_addr), resp_ip, INET_ADDRSTRLEN);
-                    record.ip = resp_ip;
-                    record.success = true;
-                    record.rtt_ms = elapsed_ms;
-                    close(sock);
-                    return record;
+                if (is_dgram_icmp && recvd >= (ssize_t)sizeof(struct icmphdr)) {
+                    struct icmphdr* icmp_hdr = (struct icmphdr*)recv_buf;
+                    if (ntohs(icmp_hdr->un.echo.sequence) == probe_seq) {
+                        char resp_ip[INET_ADDRSTRLEN];
+                        inet_ntop(AF_INET, &(from.sin_addr), resp_ip, INET_ADDRSTRLEN);
+                        record.ip = resp_ip;
+                        record.success = true;
+                        record.rtt_ms = elapsed_ms;
+                        close(sock);
+                        return record;
+                    }
                 } else if (is_raw_icmp && recvd >= (ssize_t)(sizeof(struct iphdr) + sizeof(struct icmphdr))) {
                     struct iphdr* ip_hdr = (struct iphdr*)recv_buf;
                     int ip_hdr_len = ip_hdr->ihl * 4;

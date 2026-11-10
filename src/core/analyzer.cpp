@@ -386,6 +386,27 @@ QualityReport RouteAnalyzer::analyze(std::vector<HopStats>& hops, const std::str
         report.diagnostic_notes.push_back("! 路径异常：检测到跨洲路由绕路现象（如国内互联绕行欧美），增加了额外往返时延。");
     }
 
+    // 路由死循环/连续重复跳检测
+    int consecutive_same_ip = 1;
+    std::string loop_ip;
+    int loop_start_hop = 0;
+    for (size_t i = 1; i < hops.size(); ++i) {
+        if (hops[i].recv > 0 && !hops[i].primary_ip.empty() && hops[i].primary_ip != "*") {
+            if (hops[i].primary_ip == hops[i - 1].primary_ip && hops[i].primary_ip != target_ip) {
+                consecutive_same_ip++;
+                if (consecutive_same_ip >= 3) {
+                    loop_ip = hops[i].primary_ip;
+                    loop_start_hop = hops[i - consecutive_same_ip + 1].ttl;
+                }
+            } else {
+                consecutive_same_ip = 1;
+            }
+        }
+    }
+    if (!loop_ip.empty()) {
+        report.diagnostic_notes.push_back("! 路由异常：第 " + std::to_string(loop_start_hop) + " 跳起检测到连续重复跳/路由死循环 (节点: " + loop_ip + ")。");
+    }
+
     return report;
 }
 

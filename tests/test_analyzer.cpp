@@ -158,6 +158,32 @@ void testProbeConfigDefaults() {
     std::cout << " 通过! (默认 auto_pause_count = " << config.auto_pause_count << ")\n";
 }
 
+void testRoutingLoopDetection() {
+    std::cout << "[Test] 运行测试: 路由死循环/连续重复跳识别...";
+
+    std::vector<mtr::HopStats> hops;
+    hops.resize(10);
+    for (int i = 0; i < 10; ++i) {
+        hops[i].ttl = i + 1;
+        hops[i].sent = 10;
+        hops[i].recv = 10;
+        hops[i].primary_ip = (i >= 2 && i <= 6) ? "10.0.130.1" : ("192.168.1." + std::to_string(i + 1));
+        hops[i].recomputeStats();
+    }
+
+    auto report = mtr::RouteAnalyzer::analyze(hops, "8.8.8.8");
+
+    bool loop_detected = false;
+    for (const auto& note : report.diagnostic_notes) {
+        if (note.find("死循环") != std::string::npos || note.find("重复跳") != std::string::npos) {
+            loop_detected = true;
+            break;
+        }
+    }
+    assert(loop_detected);
+    std::cout << " 通过!\n";
+}
+
 int main() {
     std::cout << "=========================================\n";
     std::cout << "  MTR-Tools 算法与诊断引擎单元测试套件\n";
@@ -169,6 +195,7 @@ int main() {
     testLineTagIdentification();
     testOvershootLossDetection();
     testUnreachableTargetDetection();
+    testRoutingLoopDetection();
 
     std::cout << "\n所有单元测试用例全部顺利通过 (100% Passed)!\n";
     return 0;
