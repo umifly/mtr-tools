@@ -44,7 +44,9 @@ HWND g_hBtnStart = NULL;
 HWND g_hBtnPause = NULL;
 HWND g_hBtnReset = NULL;
 HWND g_hBtnExport = NULL;
+HWND g_hBtnFamily = NULL;
 HWND g_hListHops = NULL;
+int g_family_mode = 0; // 0-自动, 4-IPv4, 6-IPv6
 
 // 全局字体池句柄（复用避免频繁创建销毁）
 HFONT g_hFontTitle = NULL;  // 24pt Bold 综合打分
@@ -80,6 +82,7 @@ constexpr COLORREF ACCENT_RED    = RGB(248, 113, 113);// 真实丢包/突增告�
 #define ID_BTN_PAUSE   1002
 #define ID_BTN_RESET   1003
 #define ID_BTN_EXPORT  1004
+#define ID_BTN_FAMILY  1005
 
 // 启用 High-DPI 感知
 void EnableHighDpi() {
@@ -153,8 +156,15 @@ void TriggerProbeStart(HWND hWnd) {
     new_target = new_target.substr(start, end - start + 1);
 
     std::string resolved_ip = new_target;
-    if (!RouteProber::resolveHost(new_target, resolved_ip)) {
-        std::wstring msg = L"无法解析目标地址: " + Utf8ToWide(new_target) + L"\n请检查拼写或本地网络 DNS 配置。";
+    if (new_target.find(':') != std::string::npos) {
+        g_family_mode = 6;
+        if (g_hBtnFamily) {
+            SetWindowTextW(g_hBtnFamily, L"IPv6");
+            InvalidateRect(g_hBtnFamily, NULL, TRUE);
+        }
+    }
+    if (!RouteProber::resolveHost(new_target, resolved_ip, g_family_mode)) {
+        std::wstring msg = L"无法解析目标地址: " + Utf8ToWide(new_target) + L"\n请检查拼写、网络环境或本地 IPv6 连通性。";
         MessageBoxW(hWnd, msg.c_str(), L"域名解析失败", MB_OK | MB_ICONERROR);
         return;
     }
@@ -324,6 +334,21 @@ void DrawModernButton(LPDRAWITEMSTRUCT pDIS) {
             border_color = RGB(251, 191, 36);
         }
         text_color = RGB(255, 255, 255);
+    } else if (id == ID_BTN_FAMILY) {
+        // 协议族切换按钮 (IPv6 紫色高亮, IPv4 蓝色高亮, 自动 深灰)
+        if (g_family_mode == 6) {
+            bg_color = is_pressed ? RGB(109, 40, 217) : RGB(124, 58, 237);
+            border_color = RGB(167, 139, 250);
+            text_color = RGB(255, 255, 255);
+        } else if (g_family_mode == 4) {
+            bg_color = is_pressed ? RGB(29, 78, 216) : RGB(37, 99, 235);
+            border_color = RGB(96, 165, 250);
+            text_color = RGB(255, 255, 255);
+        } else {
+            bg_color = is_pressed ? RGB(22, 27, 36) : RGB(34, 40, 52);
+            border_color = CARD_BORDER;
+            text_color = TEXT_PRIMARY;
+        }
     } else {
         // 次级按钮：深色精致石板卡片质感
         if (is_pressed) {
@@ -603,20 +628,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                                         WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | ES_AUTOHSCROLL,
                                         105, 19, 270, 22, hWnd, (HMENU)ID_EDIT_TARGET, NULL, NULL);
         SendMessageW(g_hEditTarget, WM_SETFONT, (WPARAM)g_hFontUI, TRUE);
-        SendMessageW(g_hEditTarget, EM_SETCUEBANNER, TRUE, (LPARAM)L"输入 IP 或域名 (如 1.1.1.1, baidu.com) 回车开始...");
+        SendMessageW(g_hEditTarget, EM_SETCUEBANNER, TRUE, (LPARAM)L"输入 IP 或域名 (如 2400:3200::1, baidu.com) 回车开始...");
+
+        // 协议族切换按钮 (自动 / IPv4 / IPv6)
+        std::wstring initFam = (g_family_mode == 6) ? L"IPv6" : (g_family_mode == 4 ? L"IPv4" : L"自动");
+        g_hBtnFamily = CreateWindowW(L"BUTTON", initFam.c_str(), WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | BS_OWNERDRAW,
+                                     388, 14, 62, 32, hWnd, (HMENU)ID_BTN_FAMILY, NULL, NULL);
 
         // 自绘现代深色按钮组 (统一 32px 高度，垂直基准线严格对齐)
         g_hBtnStart = CreateWindowW(L"BUTTON", L"开始探测", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | BS_OWNERDRAW,
-                                    395, 14, 100, 32, hWnd, (HMENU)ID_BTN_START, NULL, NULL);
+                                    458, 14, 98, 32, hWnd, (HMENU)ID_BTN_START, NULL, NULL);
 
         g_hBtnPause = CreateWindowW(L"BUTTON", L"暂停", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | BS_OWNERDRAW,
-                                    505, 14, 85, 32, hWnd, (HMENU)ID_BTN_PAUSE, NULL, NULL);
+                                    564, 14, 82, 32, hWnd, (HMENU)ID_BTN_PAUSE, NULL, NULL);
 
         g_hBtnReset = CreateWindowW(L"BUTTON", L"重置统计", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | BS_OWNERDRAW,
-                                    600, 14, 95, 32, hWnd, (HMENU)ID_BTN_RESET, NULL, NULL);
+                                    654, 14, 92, 32, hWnd, (HMENU)ID_BTN_RESET, NULL, NULL);
 
         g_hBtnExport = CreateWindowW(L"BUTTON", L"导出报告", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | BS_OWNERDRAW,
-                                     705, 14, 95, 32, hWnd, (HMENU)ID_BTN_EXPORT, NULL, NULL);
+                                     754, 14, 92, 32, hWnd, (HMENU)ID_BTN_EXPORT, NULL, NULL);
 
         // 创建逐跳 ListView 表格 (起始 y 坐标调整为 306，为自适应多行拓扑和 96px 诊断建议栏预留充裕空间)
         g_hListHops = CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"",
@@ -631,12 +661,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         SendMessageW(g_hListHops, LVM_SETTEXTBKCOLOR, 0, (LPARAM)CARD_BG);
         SendMessageW(g_hListHops, LVM_SETTEXTCOLOR, 0, (LPARAM)TEXT_PRIMARY);
 
-        // 初始化列头
+        // 初始化列头 (IP 地址列加宽至 210 以完整展示 IPv6 地址)
         struct ColDefW { const wchar_t* title; int width; };
         ColDefW cols[] = {
-            {L"TTL", 45}, {L"IP 地址", 130}, {L"地理位置 & 运营商", 200},
-            {L"ASN / 线路画像", 160}, {L"丢包率", 125}, {L"发包", 55},
-            {L"最新(ms)", 65}, {L"平均(ms)", 65}, {L"最低(ms)", 65}, {L"最高(ms)", 65}, {L"抖动(ms)", 65}
+            {L"TTL", 45}, {L"IP 地址", 210}, {L"地理位置 & 运营商", 180},
+            {L"ASN / 线路画像", 150}, {L"丢包率", 115}, {L"发包", 50},
+            {L"最新(ms)", 60}, {L"平均(ms)", 60}, {L"最低(ms)", 60}, {L"最高(ms)", 60}, {L"抖动(ms)", 60}
         };
 
         for (int i = 0; i < 11; ++i) {
@@ -730,6 +760,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     InvalidateRect(hWnd, NULL, FALSE);
                 }
             }
+        } else if (id == ID_BTN_FAMILY) {
+            // 切换协议模式: 自动 (0) -> IPv6 (6) -> IPv4 (4) -> 自动 (0)
+            g_family_mode = (g_family_mode == 0 ? 6 : (g_family_mode == 6 ? 4 : 0));
+            std::wstring famText = (g_family_mode == 6) ? L"IPv6" : (g_family_mode == 4 ? L"IPv4" : L"自动");
+            SetWindowTextW(g_hBtnFamily, famText.c_str());
+            InvalidateRect(g_hBtnFamily, NULL, TRUE);
         } else if (id == ID_BTN_START) {
             TriggerProbeStart(hWnd);
         } else if (id == ID_BTN_PAUSE) {

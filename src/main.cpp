@@ -32,6 +32,8 @@ void printUsage(const char* prog) {
               << "  -m, --max-ttl <数值>  最大探测跳数 (默认 30)\n"
               << "  -i, --interval <ms>   发包间隔毫秒数 (默认 1000ms)\n"
               << "  -s, --size <字节数>   探测包载荷大小 (默认 32)\n"
+              << "  -4, --ipv4            强制使用 IPv4 解析与探测\n"
+              << "  -6, --ipv6            强制使用 IPv6 解析与探测 (AAAA 记录)\n"
               << "  --mask                开启本地前 2 跳公网 IP 隐私脱敏\n"
               << "  -o, --export <文件>   将最终质量报告导出为 Markdown 文件\n"
               << "  -h, --help            显示帮助说明\n";
@@ -69,6 +71,7 @@ int main(int argc, char* argv[]) {
     int interval_ms = 1000;
     int payload_size = 32;
     int web_port = 8088;
+    int family_preference = 0; // 0-自动, 4-IPv4, 6-IPv6
     bool mask_privacy = false;
     std::string export_path = "";
 
@@ -88,6 +91,10 @@ int main(int argc, char* argv[]) {
             mode = "gui";
         } else if (arg == "--cli") {
             mode = "cli";
+        } else if (arg == "-4" || arg == "--ipv4") {
+            family_preference = 4;
+        } else if (arg == "-6" || arg == "--ipv6") {
+            family_preference = 6;
         } else if (arg == "--web-gui") {
             mode = "web-gui";
             if (i + 1 < argc && argv[i + 1][0] != '-') {
@@ -118,7 +125,7 @@ int main(int argc, char* argv[]) {
         std::string resolved_ip = "";
         if (!initial_target.empty()) {
             resolved_ip = initial_target;
-            mtr::RouteProber::resolveHost(initial_target, resolved_ip);
+            mtr::RouteProber::resolveHost(initial_target, resolved_ip, family_preference);
         }
 
         mtr::ProbeConfig config;
@@ -155,8 +162,8 @@ int main(int argc, char* argv[]) {
 
     std::cout << "正在解析目标地址: " << target << " ... " << std::flush;
     std::string resolved_ip;
-    if (!mtr::RouteProber::resolveHost(target, resolved_ip)) {
-        std::cerr << "解析失败，请检查输入或本地 DNS 配置。\n";
+    if (!mtr::RouteProber::resolveHost(target, resolved_ip, family_preference)) {
+        std::cerr << "解析失败，请检查输入、本地 DNS 配置或 IPv6 连通性。\n";
         return 1;
     }
     std::cout << "成功 -> " << resolved_ip << "\n";

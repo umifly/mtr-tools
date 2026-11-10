@@ -38,8 +38,11 @@ public:
     // 切换隐私脱敏开关
     void setPrivacyMask(bool mask);
 
-    // 解析目标地址
-    static bool resolveHost(const std::string& host, std::string& out_ip);
+    // 解析目标地址 (family_preference: 0-自动/优先根据输入判断, 4-强制IPv4, 6-强制IPv6)
+    static bool resolveHost(const std::string& host, std::string& out_ip, int family_preference = 0);
+    static bool isIPv6(const std::string& ip) {
+        return ip.find(':') != std::string::npos;
+    }
 
     // 单跳单次发包探测（跨平台实现）
     static ProbeRecord probeSingleHop(const std::string& target_ip, int ttl, int timeout_ms, int payload_size);

@@ -1,5 +1,6 @@
 #include "tui_app.hpp"
 #include "../core/exporter.hpp"
+#include "../core/geo_asn.hpp"
 #include <iostream>
 #include <sstream>
 #include <iomanip>
@@ -237,11 +238,20 @@ void TuiApp::render(const std::vector<HopStats>& hops, const QualityReport& repo
         fixed_lines++;
     }
 
-    ss << COLOR_CYAN
-       << "---------------------------------------------------------------------------------------------------" << TUI_EL
-       << " TTL | IP 地址          | 地理位置 & 运营商      | ASN / 线路画像     | Loss% | Sent | Last | Avg  | 趋势(10次)" << TUI_EL
-       << "---------------------------------------------------------------------------------------------------" << TUI_EL
-       << COLOR_RESET;
+    bool is_v6 = (cfg.resolved_ip.find(':') != std::string::npos);
+    if (is_v6) {
+        ss << COLOR_CYAN
+           << "---------------------------------------------------------------------------------------------------" << TUI_EL
+           << " TTL | IP 地址                   | 地理位置 & 运营商 | ASN / 线路画像   | Loss% | Sent | Last | Avg  | 趋势(10次)" << TUI_EL
+           << "---------------------------------------------------------------------------------------------------" << TUI_EL
+           << COLOR_RESET;
+    } else {
+        ss << COLOR_CYAN
+           << "---------------------------------------------------------------------------------------------------" << TUI_EL
+           << " TTL | IP 地址          | 地理位置 & 运营商      | ASN / 线路画像     | Loss% | Sent | Last | Avg  | 趋势(10次)" << TUI_EL
+           << "---------------------------------------------------------------------------------------------------" << TUI_EL
+           << COLOR_RESET;
+    }
 
     // 3. 逐跳表格渲染与终端高度自适应（防止行数超出物理高度触发滚屏）
     double global_max_rtt = 0.0;
@@ -293,13 +303,16 @@ void TuiApp::render(const std::vector<HopStats>& hops, const QualityReport& repo
 
         std::string disp_ip = h.primary_ip.empty() ? "*" : h.primary_ip;
         if (mask_privacy_ && h.ttl <= 2 && !h.geo.is_private) {
-            size_t sec = disp_ip.find('.', disp_ip.find('.') + 1);
-            if (sec != std::string::npos) disp_ip = disp_ip.substr(0, sec) + ".*.*";
+            disp_ip = GeoAsnResolver::maskIP(disp_ip);
         }
 
-        std::string s_ip = padOrTruncateUtf8(disp_ip, 16);
-        std::string s_loc = padOrTruncateUtf8(h.geo.getLocationDisplay(), 22);
-        std::string s_asn = padOrTruncateUtf8(h.geo.getAsnDisplay(), 18);
+        int ip_col_w = is_v6 ? 25 : 16;
+        int loc_col_w = is_v6 ? 19 : 22;
+        int asn_col_w = is_v6 ? 16 : 18;
+
+        std::string s_ip = padOrTruncateUtf8(disp_ip, ip_col_w);
+        std::string s_loc = padOrTruncateUtf8(h.geo.getLocationDisplay(), loc_col_w);
+        std::string s_asn = padOrTruncateUtf8(h.geo.getAsnDisplay(), asn_col_w);
 
         char line_buf[128];
         snprintf(line_buf, sizeof(line_buf), " %2d  | %s | %s | %s |",

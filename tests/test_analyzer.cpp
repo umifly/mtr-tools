@@ -184,6 +184,33 @@ void testRoutingLoopDetection() {
     std::cout << " 通过!\n";
 }
 
+void testIPv6Support() {
+    std::cout << "[Test] 运行测试: IPv6 地址私网识别、脱敏与运营商前缀打标...";
+
+    // 1. IPv6 私网与回环识别
+    assert(mtr::GeoAsnResolver::isPrivateIP("::1") == true);
+    assert(mtr::GeoAsnResolver::isPrivateIP("fe80::1ff:fe00:1") == true);
+    assert(mtr::GeoAsnResolver::isPrivateIP("fd12:3456:789a::1") == true);
+    assert(mtr::GeoAsnResolver::isPrivateIP("2400:3200::1") == false);
+
+    // 2. IPv6 脱敏格式
+    std::string masked = mtr::GeoAsnResolver::maskIP("240e:1f:1234:5678:abcd:ef01:2345:6789");
+    assert(masked.find("[已脱敏]") != std::string::npos);
+    assert(masked.find("240e:1f:1234") != std::string::npos);
+
+    // 3. IPv6 线路画像识别
+    std::string tag1 = mtr::GeoAsnResolver::identifyLineTag("240e:1f::1", "AS4134", "China Telecom", "");
+    assert(tag1.find("电信") != std::string::npos);
+
+    std::string tag2 = mtr::GeoAsnResolver::identifyLineTag("2400:3200::1", "", "Alibaba", "DNS");
+    assert(tag2.find("阿里") != std::string::npos);
+
+    std::string tag3 = mtr::GeoAsnResolver::identifyLineTag("2001:4860:4860::8888", "AS15169", "Google", "");
+    assert(tag3.find("Google") != std::string::npos);
+
+    std::cout << " 通过!\n";
+}
+
 int main() {
     std::cout << "=========================================\n";
     std::cout << "  MTR-Tools 算法与诊断引擎单元测试套件\n";
@@ -196,6 +223,7 @@ int main() {
     testOvershootLossDetection();
     testUnreachableTargetDetection();
     testRoutingLoopDetection();
+    testIPv6Support();
 
     std::cout << "\n所有单元测试用例全部顺利通过 (100% Passed)!\n";
     return 0;
