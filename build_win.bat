@@ -17,7 +17,7 @@ if errorlevel 1 (
 echo [1/3] test_analyzer.exe build SUCCESS.
 
 echo [2/3] Compiling mtr-tools.exe (TUI + GUI) ...
-g++.exe -std=c++20 -O2 -Isrc src/main.cpp src/core/prober.cpp src/core/prober_win.cpp src/core/geo_asn.cpp src/core/analyzer.cpp src/tui/tui_app.cpp src/gui/gui_win32.cpp -o "%~dp0mtr-tools.exe" -mwindows -liphlpapi -lws2_32 -lwinhttp -lcomctl32 -lgdi32 -luser32 -static -static-libgcc -static-libstdc++
+g++.exe -std=c++20 -O2 -Isrc src/main.cpp src/core/prober.cpp src/core/prober_win.cpp src/core/geo_asn.cpp src/core/analyzer.cpp src/tui/tui_app.cpp src/gui/gui_win32.cpp -o "%~dp0mtr-tools.exe" -mwindows -liphlpapi -lws2_32 -lwinhttp -lcomctl32 -lgdi32 -luser32 -lshell32 -static -static-libgcc -static-libstdc++
 if errorlevel 1 (
     echo [ERROR] mtr-tools build failed!
     exit /b 1

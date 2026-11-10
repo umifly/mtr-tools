@@ -12,6 +12,7 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <shellapi.h>
 #include <conio.h>
 #else
 #include <termios.h>
@@ -343,7 +344,7 @@ void TuiApp::render(const std::vector<HopStats>& hops, const QualityReport& repo
        << COLOR_RESET;
     ss << " 快捷键: [P] " << (prober_.isPaused() ? "继续探测" : "暂停探测")
        << "  |  [R] 重置统计  |  [M] IP脱敏(" << (mask_privacy_ ? "开" : "关")
-       << ")  |  [E] 导出Markdown报告  |  [Q] 退出" << TUI_EL;
+       << ")  |  [E] 导出报告  |  [G] GitHub项目  |  [Q] 退出" << TUI_EL;
 
     if (!status_msg_.empty()) {
         ss << " " << COLOR_GREEN << ">>> " << status_msg_ << COLOR_RESET << TUI_EL;
@@ -389,6 +390,9 @@ void TuiApp::run() {
                     mask_privacy_ = !mask_privacy_;
                     prober_.setPrivacyMask(mask_privacy_);
                     status_msg_ = mask_privacy_ ? "已开启前2跳IP隐私脱敏" : "已关闭隐私脱敏";
+                } else if (ch == 'g') {
+                    ShellExecuteW(NULL, L"open", L"https://github.com/umifly/mtr-tools", NULL, NULL, SW_SHOWNORMAL);
+                    status_msg_ = "已在浏览器中打开 GitHub 项目: https://github.com/umifly/mtr-tools";
                 } else if (ch == 'e') {
                     auto snap_hops = prober_.getHopsSnapshot();
                     auto snap_rep = prober_.getReportSnapshot();
@@ -415,6 +419,9 @@ void TuiApp::run() {
             } else if (ch == 'm') {
                 mask_privacy_ = !mask_privacy_;
                 prober_.setPrivacyMask(mask_privacy_);
+            } else if (ch == 'g') {
+                if (system("xdg-open https://github.com/umifly/mtr-tools >/dev/null 2>&1 &") != 0) {}
+                status_msg_ = "已打开 GitHub 项目: https://github.com/umifly/mtr-tools";
             } else if (ch == 'e') {
                 auto snap_hops = prober_.getHopsSnapshot();
                 auto snap_rep = prober_.getReportSnapshot();

@@ -76,7 +76,13 @@ public:
 </head>
 <body>
   <div class="card">
-    <h1>MTR-Tools 去程线路质量智能评估看板 <span style="font-size:14px;color:#94a3b8" id="tgt">Target: -</span></h1>
+    <h1>
+      <span>MTR-Tools 去程线路质量智能评估看板</span>
+      <div>
+        <span style="font-size:14px;color:#94a3b8;margin-right:14px;" id="tgt">Target: -</span>
+        <a href="https://github.com/umifly/mtr-tools" target="_blank" style="background:#24292e;color:#fff;padding:5px 12px;border-radius:6px;text-decoration:none;font-size:12px;border:1px solid #444d56;">GitHub 项目</a>
+      </div>
+    </h1>
     <div class="topo-bar" id="topo">去程链路: 本机</div>
   </div>
   <div class="grid">

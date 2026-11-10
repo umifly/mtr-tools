@@ -36,7 +36,8 @@ void printUsage(const char* prog) {
               << "  -6, --ipv6            强制使用 IPv6 解析与探测 (AAAA 记录)\n"
               << "  --mask                开启本地前 2 跳公网 IP 隐私脱敏\n"
               << "  -o, --export <文件>   将最终质量报告导出为 Markdown 文件\n"
-              << "  -h, --help            显示帮助说明\n";
+              << "  -h, --help            显示帮助说明\n\n"
+              << "开源项目地址: https://github.com/umifly/mtr-tools\n";
 }
 
 int main(int argc, char* argv[]) {

@@ -4,6 +4,7 @@
 #include "../core/exporter.hpp"
 #include <windows.h>
 #include <commctrl.h>
+#include <shellapi.h>
 #include <sstream>
 #include <iomanip>
 #include <vector>
@@ -45,6 +46,7 @@ HWND g_hBtnPause = NULL;
 HWND g_hBtnReset = NULL;
 HWND g_hBtnExport = NULL;
 HWND g_hBtnFamily = NULL;
+HWND g_hBtnGithub = NULL;
 HWND g_hListHops = NULL;
 int g_family_mode = 0; // 0-自动, 4-IPv4, 6-IPv6
 
@@ -83,6 +85,7 @@ constexpr COLORREF ACCENT_RED    = RGB(248, 113, 113);// 真实丢包/突增告�
 #define ID_BTN_RESET   1003
 #define ID_BTN_EXPORT  1004
 #define ID_BTN_FAMILY  1005
+#define ID_BTN_GITHUB  1006
 
 // 启用 High-DPI 感知
 void EnableHighDpi() {
@@ -349,6 +352,16 @@ void DrawModernButton(LPDRAWITEMSTRUCT pDIS) {
             border_color = CARD_BORDER;
             text_color = TEXT_PRIMARY;
         }
+    } else if (id == ID_BTN_GITHUB) {
+        // GitHub 项目按钮：经典 GitHub 深灰徽章风
+        if (is_pressed) {
+            bg_color = RGB(16, 20, 26);
+            border_color = RGB(75, 85, 99);
+        } else {
+            bg_color = RGB(33, 38, 45);
+            border_color = RGB(65, 75, 92);
+        }
+        text_color = RGB(255, 255, 255);
     } else {
         // 次级按钮：深色精致石板卡片质感
         if (is_pressed) {
@@ -648,6 +661,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         g_hBtnExport = CreateWindowW(L"BUTTON", L"导出报告", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | BS_OWNERDRAW,
                                      754, 14, 92, 32, hWnd, (HMENU)ID_BTN_EXPORT, NULL, NULL);
 
+        // GitHub 开源项目链接按钮
+        g_hBtnGithub = CreateWindowW(L"BUTTON", L"GitHub", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | BS_OWNERDRAW,
+                                     854, 14, 95, 32, hWnd, (HMENU)ID_BTN_GITHUB, NULL, NULL);
+
         // 创建逐跳 ListView 表格 (起始 y 坐标调整为 306，为自适应多行拓扑和 96px 诊断建议栏预留充裕空间)
         g_hListHops = CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"",
                                       WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | LVS_REPORT | LVS_SINGLESEL,
@@ -800,6 +817,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 ReportExporter::saveToFile("mtr_report.md", md);
                 MessageBoxW(hWnd, L"完整质量评估报告已保存至当前目录: mtr_report.md", L"报告导出成功", MB_OK | MB_ICONINFORMATION);
             }
+        } else if (id == ID_BTN_GITHUB) {
+            ShellExecuteW(hWnd, L"open", L"https://github.com/umifly/mtr-tools", NULL, NULL, SW_SHOWNORMAL);
         }
         return 0;
     }

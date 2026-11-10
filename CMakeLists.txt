@@ -14,7 +14,7 @@ set(CORE_SOURCES
 
 if(WIN32)
     list(APPEND CORE_SOURCES src/core/prober_win.cpp src/gui/gui_win32.cpp)
-    set(SYSTEM_LIBS iphlpapi ws2_32 winhttp comctl32 gdi32 user32)
+    set(SYSTEM_LIBS iphlpapi ws2_32 winhttp comctl32 gdi32 user32 shell32)
     set(GUI_TYPE WIN32)
 else()
     list(APPEND CORE_SOURCES src/core/prober_linux.cpp)

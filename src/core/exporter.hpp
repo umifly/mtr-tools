@@ -18,7 +18,8 @@ public:
         ss << "- **综合评分**: **" << report.score << " 分 [" << report.grade << " 级]**\n";
         ss << "- **等效 MOS 分**: " << std::fixed << std::setprecision(2) << report.mos << " / 4.50\n";
         ss << "- **终点延迟与丢包**: 平均延迟 " << std::fixed << std::setprecision(1) << report.final_avg_rtt << "ms | 有效丢包率 " << report.effective_loss << "% | 抖动 " << report.final_jitter << "ms\n";
-        ss << "- **适用性评估**: 网页流媒体 [" << report.web_rating << "] | 远程 SSH/办公 [" << report.ssh_rating << "] | 竞技游戏/VoIP [" << report.game_rating << "]\n\n";
+        ss << "- **适用性评估**: 网页流媒体 [" << report.web_rating << "] | 远程 SSH/办公 [" << report.ssh_rating << "] | 竞技游戏/VoIP [" << report.game_rating << "]\n";
+        ss << "- **项目地址**: [https://github.com/umifly/mtr-tools](https://github.com/umifly/mtr-tools)\n\n";
 
         if (!report.path_summary.empty()) {
             ss << "### 运营商去程拓扑链\n`";
